@@ -1,4 +1,4 @@
-const VERSION = 'crisisweave-offline-v3';
+const VERSION = 'crisisweave-offline-v4';
 const APP_SHELL = [
   './',
   './index.html',
@@ -13,22 +13,16 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k))))
-      .then(() => self.clients.claim())
-  );
+  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
-function isEventFeed(request) {
+function isSnapshot(request) {
   const url = new URL(request.url);
   const accept = request.headers.get('accept') || '';
   return request.method === 'GET' && (
-    url.pathname.endsWith('.json') ||
-    url.pathname.endsWith('.jsonl') ||
-    accept.includes('application/json') ||
-    url.searchParams.has('feed') ||
-    url.searchParams.has('alerts') ||
-    url.searchParams.has('worksites')
+    url.pathname.endsWith('.json') || url.pathname.endsWith('.jsonl') ||
+    accept.includes('application/json') || url.searchParams.has('feed') ||
+    url.searchParams.has('alerts') || url.searchParams.has('worksites')
   );
 }
 
@@ -58,13 +52,6 @@ self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
-
-  if (isEventFeed(request)) {
-    event.respondWith(networkFirst(request));
-    return;
-  }
-
-  if (url.origin === self.location.origin) {
-    event.respondWith(cacheFirst(request));
-  }
+  if (isSnapshot(request)) { event.respondWith(networkFirst(request)); return; }
+  if (url.origin === self.location.origin) event.respondWith(cacheFirst(request));
 });
