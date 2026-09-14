@@ -1,5 +1,12 @@
-const VERSION = 'crisisweave-offline-v2';
-const APP_SHELL = ['./', './index.html'];
+const VERSION = 'crisisweave-offline-v3';
+const APP_SHELL = [
+  './',
+  './index.html',
+  './volunteer.html',
+  './verified.jsonl',
+  './alerts.jsonl',
+  './worksites.jsonl'
+];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(VERSION).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
@@ -20,7 +27,8 @@ function isEventFeed(request) {
     url.pathname.endsWith('.jsonl') ||
     accept.includes('application/json') ||
     url.searchParams.has('feed') ||
-    url.searchParams.has('alerts')
+    url.searchParams.has('alerts') ||
+    url.searchParams.has('worksites')
   );
 }
 
