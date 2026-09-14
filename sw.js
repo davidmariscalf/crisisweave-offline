@@ -1,4 +1,4 @@
-const VERSION = 'crisisweave-offline-v1';
+const VERSION = 'crisisweave-offline-v2';
 const APP_SHELL = ['./', './index.html'];
 
 self.addEventListener('install', event => {
@@ -19,7 +19,8 @@ function isEventFeed(request) {
     url.pathname.endsWith('.json') ||
     url.pathname.endsWith('.jsonl') ||
     accept.includes('application/json') ||
-    url.searchParams.has('feed')
+    url.searchParams.has('feed') ||
+    url.searchParams.has('alerts')
   );
 }
 
