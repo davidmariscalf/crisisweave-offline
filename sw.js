@@ -1,4 +1,4 @@
-const VERSION = 'crisisweave-offline-v4';
+const VERSION = 'crisisweave-offline-v5';
 const APP_SHELL = [
   './',
   './index.html',
@@ -8,8 +8,25 @@ const APP_SHELL = [
   './worksites.jsonl'
 ];
 
+const WARM_EXTERNAL = [
+  'https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css',
+  'https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js',
+  'https://demotiles.maplibre.org/style.json',
+  'https://demotiles.maplibre.org/tiles/tiles.json'
+];
+
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(VERSION).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
+  event.waitUntil((async () => {
+    const cache = await caches.open(VERSION);
+    await cache.addAll(APP_SHELL);
+    await Promise.allSettled(WARM_EXTERNAL.map(async url => {
+      const response = await fetch(url);
+      if (response && (response.ok || response.type === 'opaque')) {
+        await cache.put(url, response.clone());
+      }
+    }));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener('activate', event => {
@@ -24,6 +41,12 @@ function isSnapshot(request) {
     accept.includes('application/json') || url.searchParams.has('feed') ||
     url.searchParams.has('alerts') || url.searchParams.has('worksites')
   );
+}
+
+function isMapAsset(request) {
+  if (request.method !== 'GET') return false;
+  const url = new URL(request.url);
+  return url.hostname === 'unpkg.com' || url.hostname === 'demotiles.maplibre.org';
 }
 
 async function networkFirst(request) {
@@ -53,5 +76,7 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (isSnapshot(request)) { event.respondWith(networkFirst(request)); return; }
-  if (url.origin === self.location.origin) event.respondWith(cacheFirst(request));
+  if (url.origin === self.location.origin || isMapAsset(request)) {
+    event.respondWith(cacheFirst(request));
+  }
 });
