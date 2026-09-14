@@ -1,8 +1,14 @@
-const VERSION = 'crisisweave-offline-v5';
+const VERSION = 'crisisweave-offline-v6';
 const APP_SHELL = [
   './',
   './index.html',
   './volunteer.html',
+  './verified.jsonl',
+  './alerts.jsonl',
+  './worksites.jsonl'
+];
+
+const PUBLIC_SNAPSHOT_PATHS = [
   './verified.jsonl',
   './alerts.jsonl',
   './worksites.jsonl'
@@ -15,13 +21,16 @@ const WARM_EXTERNAL = [
   'https://demotiles.maplibre.org/tiles/tiles.json'
 ];
 
+const SHELL_URLS = new Set(APP_SHELL.map(path => new URL(path, self.location.href).href));
+const SNAPSHOT_URLS = new Set(PUBLIC_SNAPSHOT_PATHS.map(path => new URL(path, self.location.href).href));
+
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(VERSION);
     await cache.addAll(APP_SHELL);
     await Promise.allSettled(WARM_EXTERNAL.map(async url => {
-      const response = await fetch(url);
-      if (response && (response.ok || response.type === 'opaque')) {
+      const response = await fetch(url, { credentials: 'omit', referrerPolicy: 'no-referrer' });
+      if (isCacheableResponse(response, true)) {
         await cache.put(url, response.clone());
       }
     }));
@@ -30,30 +39,67 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('activate', event => {
-  event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== VERSION).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  event.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(key => key !== VERSION).map(key => caches.delete(key))))
+      .then(() => self.clients.claim())
+  );
 });
 
-function isSnapshot(request) {
+function canonicalUrl(request) {
   const url = new URL(request.url);
-  const accept = request.headers.get('accept') || '';
-  return request.method === 'GET' && (
-    url.pathname.endsWith('.json') || url.pathname.endsWith('.jsonl') ||
-    accept.includes('application/json') || url.searchParams.has('feed') ||
-    url.searchParams.has('alerts') || url.searchParams.has('worksites')
-  );
+  url.hash = '';
+  return url;
+}
+
+function hasCredentials(request) {
+  return Boolean(request.headers.get('authorization')) || request.credentials === 'include';
+}
+
+function isSnapshot(request) {
+  if (request.method !== 'GET' || hasCredentials(request)) return false;
+  const url = canonicalUrl(request);
+  if (url.origin !== self.location.origin || url.search) return false;
+  return SNAPSHOT_URLS.has(url.href);
+}
+
+function isShellAsset(request) {
+  if (request.method !== 'GET' || hasCredentials(request)) return false;
+  const url = canonicalUrl(request);
+  if (url.origin !== self.location.origin || url.search) return false;
+  return SHELL_URLS.has(url.href);
 }
 
 function isMapAsset(request) {
-  if (request.method !== 'GET') return false;
+  if (request.method !== 'GET' || hasCredentials(request)) return false;
   const url = new URL(request.url);
-  return url.hostname === 'unpkg.com' || url.hostname === 'demotiles.maplibre.org';
+  if (url.username || url.password) return false;
+  if (url.hostname === 'unpkg.com') {
+    return url.pathname.startsWith('/maplibre-gl@5.6.1/dist/');
+  }
+  if (url.hostname === 'demotiles.maplibre.org') {
+    return url.pathname === '/style.json' || url.pathname.startsWith('/tiles/');
+  }
+  return false;
+}
+
+function isCacheableResponse(response, allowOpaque = false) {
+  if (!response) return false;
+  if (response.type === 'opaque') return allowOpaque;
+  if (!response.ok) return false;
+  const cacheControl = (response.headers.get('cache-control') || '').toLowerCase();
+  if (cacheControl.includes('no-store') || cacheControl.includes('private')) return false;
+  if (response.headers.get('set-cookie')) return false;
+  return true;
 }
 
 async function networkFirst(request) {
   const cache = await caches.open(VERSION);
   try {
     const response = await fetch(request);
-    if (response && response.ok) await cache.put(request, response.clone());
+    if (isCacheableResponse(response, false)) {
+      await cache.put(request, response.clone());
+    }
     return response;
   } catch (err) {
     const cached = await cache.match(request);
@@ -62,21 +108,30 @@ async function networkFirst(request) {
   }
 }
 
-async function cacheFirst(request) {
+async function cacheFirst(request, allowOpaque = false) {
   const cache = await caches.open(VERSION);
   const cached = await cache.match(request);
   if (cached) return cached;
   const response = await fetch(request);
-  if (response && (response.ok || response.type === 'opaque')) await cache.put(request, response.clone());
+  if (isCacheableResponse(response, allowOpaque)) {
+    await cache.put(request, response.clone());
+  }
   return response;
 }
 
 self.addEventListener('fetch', event => {
   const request = event.request;
   if (request.method !== 'GET') return;
-  const url = new URL(request.url);
-  if (isSnapshot(request)) { event.respondWith(networkFirst(request)); return; }
-  if (url.origin === self.location.origin || isMapAsset(request)) {
-    event.respondWith(cacheFirst(request));
+
+  if (isSnapshot(request)) {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+  if (isShellAsset(request)) {
+    event.respondWith(cacheFirst(request, false));
+    return;
+  }
+  if (isMapAsset(request)) {
+    event.respondWith(cacheFirst(request, true));
   }
 });
