@@ -1,4 +1,4 @@
-const VERSION = 'crisisweave-offline-v6';
+const VERSION = 'crisisweave-offline-v7';
 const APP_SHELL = [
   './',
   './index.html',
@@ -14,9 +14,19 @@ const PUBLIC_SNAPSHOT_PATHS = [
   './worksites.jsonl'
 ];
 
-const WARM_EXTERNAL = [
+// The console cannot execute its offline map fallback without the MapLibre
+// runtime itself. These two files are therefore installation-critical: a new
+// worker must not activate and advertise an offline shell if either one was
+// unavailable while the package was being prepared online.
+const CRITICAL_EXTERNAL = [
   'https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css',
-  'https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js',
+  'https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js'
+];
+
+// The online basemap is useful but not required offline. index.html switches
+// to its same-page local style when navigator.onLine is false, so failure to
+// warm these resources must not block an otherwise valid offline package.
+const OPTIONAL_EXTERNAL = [
   'https://demotiles.maplibre.org/style.json',
   'https://demotiles.maplibre.org/tiles/tiles.json'
 ];
@@ -24,16 +34,26 @@ const WARM_EXTERNAL = [
 const SHELL_URLS = new Set(APP_SHELL.map(path => new URL(path, self.location.href).href));
 const SNAPSHOT_URLS = new Set(PUBLIC_SNAPSHOT_PATHS.map(path => new URL(path, self.location.href).href));
 
+async function cacheExternal(cache, url, required) {
+  try {
+    const response = await fetch(url, { credentials: 'omit', referrerPolicy: 'no-referrer' });
+    if (!isCacheableResponse(response, true)) {
+      throw new Error(`uncacheable response for ${url}`);
+    }
+    await cache.put(url, response.clone());
+  } catch (error) {
+    if (required) throw error;
+  }
+}
+
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(VERSION);
     await cache.addAll(APP_SHELL);
-    await Promise.allSettled(WARM_EXTERNAL.map(async url => {
-      const response = await fetch(url, { credentials: 'omit', referrerPolicy: 'no-referrer' });
-      if (isCacheableResponse(response, true)) {
-        await cache.put(url, response.clone());
-      }
-    }));
+    for (const url of CRITICAL_EXTERNAL) {
+      await cacheExternal(cache, url, true);
+    }
+    await Promise.all(OPTIONAL_EXTERNAL.map(url => cacheExternal(cache, url, false)));
     await self.skipWaiting();
   })());
 });

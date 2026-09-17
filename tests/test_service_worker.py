@@ -20,6 +20,21 @@ class ServiceWorkerTests(unittest.TestCase):
         self.assertIn("isMapAsset", sw)
         self.assertIn("/maplibre-gl@5.6.1/dist/", sw)
 
+    def test_map_runtime_is_required_before_worker_activation(self):
+        sw = self.read_sw()
+        self.assertIn("const CRITICAL_EXTERNAL", sw)
+        self.assertIn("maplibre-gl@5.6.1/dist/maplibre-gl.css", sw)
+        self.assertIn("maplibre-gl@5.6.1/dist/maplibre-gl.js", sw)
+        self.assertIn("for (const url of CRITICAL_EXTERNAL)", sw)
+        self.assertIn("cacheExternal(cache, url, true)", sw)
+        self.assertNotIn("Promise.allSettled(WARM_EXTERNAL", sw)
+
+    def test_online_basemap_warming_is_optional(self):
+        sw = self.read_sw()
+        self.assertIn("const OPTIONAL_EXTERNAL", sw)
+        self.assertIn("demotiles.maplibre.org/style.json", sw)
+        self.assertIn("cacheExternal(cache, url, false)", sw)
+
     def test_snapshot_requests_are_network_first(self):
         sw = self.read_sw()
         self.assertIn("networkFirst(request)", sw)
