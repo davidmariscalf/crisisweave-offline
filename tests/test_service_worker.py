@@ -13,21 +13,21 @@ class ServiceWorkerTests(unittest.TestCase):
         for name in ("index.html", "volunteer.html", "verified.jsonl", "alerts.jsonl", "worksites.jsonl"):
             self.assertIn(name, sw)
 
-    def test_map_dependencies_are_warmed_and_pinned(self):
+    def test_map_runtime_is_packaged_in_same_origin_shell(self):
         sw = self.read_sw()
-        self.assertIn("maplibre-gl@5.6.1", sw)
-        self.assertIn("demotiles.maplibre.org/style.json", sw)
-        self.assertIn("isMapAsset", sw)
-        self.assertIn("/maplibre-gl@5.6.1/dist/", sw)
+        self.assertIn("'./vendor/maplibre-gl.css'", sw)
+        self.assertIn("'./vendor/maplibre-gl.js'", sw)
+        self.assertIn("'./vendor/MAPLIBRE_LICENSE.txt'", sw)
+        self.assertNotIn("unpkg.com", sw)
+        self.assertNotIn("CRITICAL_EXTERNAL", sw)
 
-    def test_map_runtime_is_required_before_worker_activation(self):
+    def test_packaged_map_runtime_is_required_before_worker_activation(self):
         sw = self.read_sw()
-        self.assertIn("const CRITICAL_EXTERNAL", sw)
-        self.assertIn("maplibre-gl@5.6.1/dist/maplibre-gl.css", sw)
-        self.assertIn("maplibre-gl@5.6.1/dist/maplibre-gl.js", sw)
-        self.assertIn("for (const url of CRITICAL_EXTERNAL)", sw)
-        self.assertIn("cacheExternal(cache, url, true)", sw)
-        self.assertNotIn("Promise.allSettled(WARM_EXTERNAL", sw)
+        self.assertIn("await cache.addAll(APP_SHELL)", sw)
+        self.assertIn("'./vendor/maplibre-gl.css'", sw)
+        self.assertIn("'./vendor/maplibre-gl.js'", sw)
+        self.assertIn("'./vendor/MAPLIBRE_LICENSE.txt'", sw)
+        self.assertNotIn("cacheExternal(cache, url, true)", sw)
 
     def test_online_basemap_warming_is_optional(self):
         sw = self.read_sw()
