@@ -1,11 +1,15 @@
-const VERSION = 'crisisweave-offline-v7';
+const VERSION = 'crisisweave-offline-v8';
 const APP_SHELL = [
   './',
   './index.html',
   './volunteer.html',
   './verified.jsonl',
   './alerts.jsonl',
-  './worksites.jsonl'
+  './worksites.jsonl',
+  './manifest.webmanifest',
+  './vendor/maplibre-gl.css',
+  './vendor/maplibre-gl.js',
+  './vendor/MAPLIBRE_LICENSE.txt'
 ];
 
 const PUBLIC_SNAPSHOT_PATHS = [
@@ -14,14 +18,9 @@ const PUBLIC_SNAPSHOT_PATHS = [
   './worksites.jsonl'
 ];
 
-// The console cannot execute its offline map fallback without the MapLibre
-// runtime itself. These two files are therefore installation-critical: a new
-// worker must not activate and advertise an offline shell if either one was
-// unavailable while the package was being prepared online.
-const CRITICAL_EXTERNAL = [
-  'https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.css',
-  'https://unpkg.com/maplibre-gl@5.6.1/dist/maplibre-gl.js'
-];
+// MapLibre JS/CSS are packaged as same-origin app-shell assets by the
+// locked CrisisWeave release build. The worker never depends on a CDN for the
+// runtime needed to render the offline no-basemap view.
 
 // The online basemap is useful but not required offline. index.html switches
 // to its same-page local style when navigator.onLine is false, so failure to
@@ -50,9 +49,6 @@ self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(VERSION);
     await cache.addAll(APP_SHELL);
-    for (const url of CRITICAL_EXTERNAL) {
-      await cacheExternal(cache, url, true);
-    }
     await Promise.all(OPTIONAL_EXTERNAL.map(url => cacheExternal(cache, url, false)));
     await self.skipWaiting();
   })());
@@ -94,9 +90,6 @@ function isMapAsset(request) {
   if (request.method !== 'GET' || hasCredentials(request)) return false;
   const url = new URL(request.url);
   if (url.username || url.password) return false;
-  if (url.hostname === 'unpkg.com') {
-    return url.pathname.startsWith('/maplibre-gl@5.6.1/dist/');
-  }
   if (url.hostname === 'demotiles.maplibre.org') {
     return url.pathname === '/style.json' || url.pathname.startsWith('/tiles/');
   }
